@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Shading and Texture Mapping</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+      background-color: #f0f0f0;
+    }
+    canvas {display: block;}
+    .control-container {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(247, 6, 6, 0.8);
+      padding: 20px;
+      border-radius: 10px;
+      color: white;
+      width: 300px;
+      z-index: 10;
+      display: grid;
+      gap: 15px;
+    }
+    .control-container label {font-size: 14px;}
+    .control-container .control-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .control-container input {
+      width: 180px;
+      margin-right: 10px;
+    }
+    .control-container span {
+      width: 50px;
+      text-align: center;
+    }
+    #uploadContainer {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(247, 6, 6, 0.8);
+      padding: 10px;
+      border-radius: 5px;
+      font-family: Arial, sans-serif;
+      color: white;
+      z-index: 10;
+    }
+    #rotationSpeedContainer {
+      position: absolute;
+      top: 300px;
+      left: 10px;
+      background: rgba(247, 6, 6, 0.8);
+      padding: 15px;
+      border-radius: 10px;
+      font-family: Arial, sans-serif;
+      color: white;
+      width: 300px;
+      z-index: 10;
+      display: grid;
+      gap: 15px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Aydınlatma ve pozisyon ayarları icin kontroller -->
+<div class="control-container" id="controlsContainer">
+  <div class="control-item">
+    <label for="lightIntensity">Işık Intensity:</label>
+    <input type="range" id="lightIntensity" min="1" max="10" step="0.1" value="1.5">
+    <span id="lightIntensityValue">1.5</span>
+  </div>
+  <div class="control-item">
+    <label for="lightPositionX">Işık X Pozisyonu:</label>
+    <input type="range" id="lightPositionX" min="-10" max="10" step="0.1" value="5">
+    <span id="lightPositionXValue">5</span>
+  </div>
+  <div class="control-item">
+    <label for="lightPositionY">Işık Y Pozisyonu:</label>
+    <input type="range" id="lightPositionY" min="-10" max="10" step="0.1" value="5">
+    <span id="lightPositionYValue">5</span>
+  </div>
+  <div class="control-item">
+    <label for="lightPositionZ">Işık Z Pozisyonu:</label>
+    <input type="range" id="lightPositionZ" min="-10" max="10" step="0.1" value="5">
+    <span id="lightPositionZValue">5</span>
+  </div>
+  <!-- Yeni ışık rengi seçici -->
+  <div class="control-item">
+    <label for="lightColor">Işık Rengi:</label>
+    <input type="color" id="lightColor" value="#ffffff">
+  </div>
+</div>
+
+<!-- Doku yükleme bölümü -->
+<div id="uploadContainer">
+  <label for="imageUpload">Doku Yükle:</label>
+  <input type="file" id="imageUpload" accept="image/*">
+</div>
+
+<!-- Dönme hızı kontrolü -->
+<div id="rotationSpeedContainer">
+  <div class="control-item">
+    <label for="rotationSpeed">Dönme Hızı:</label>
+    <input type="range" id="rotationSpeed" min="0" max="0.1" step="0.001" value="0.01">
+    <span id="rotationSpeedValue">0.01</span>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+<script>
+  // Scene, Kamera ve Renderer Ayarları
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xADD8E6); // Açık mavi arka plan
+
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true; // Gölgeleme etkinleştirildi
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Daha yumuşak gölgeler
+  document.body.appendChild(renderer.domElement);
+
+  // Sphere Geometri ve Materyal
+  const sphereGeometry = new THREE.SphereGeometry(2, 64, 64);
+  const sphereMaterial = new THREE.MeshStandardMaterial({
+    color: 0xFFFFFF, // Beyaz temel renk, daha iyi aydınlatma efekti için
+    roughness: 0.6, // Daha az parlak görünüm için artırılmış pürüzlülük
+    metalness: 0.1, // Daha az yansıtıcı yüzey için azaltılmış metalik değer
+  });
+  const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+  sphere.castShadow = true; // Sphere için gölge oluşturma etkinleştirildi
+  scene.add(sphere);
+
+  // Zemin Düzlemi (gölge alması için)
+  const planeGeometry = new THREE.PlaneGeometry(10, 10);
+  const planeMaterial = new THREE.ShadowMaterial({ opacity: 0.4 }); // Daha yumuşak gölgeler
+  const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+  plane.rotation.x = -Math.PI / 2;
+  plane.position.y = -2.1;
+  plane.receiveShadow = true; // Zemin, gölgeleri alacak
+  scene.add(plane);
+
+  // Yönlü Işık (gölge kontrolü için)
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5); // Işık yoğunluğu düşürülmüş
+  directionalLight.position.set(5, 5, 5); // Işık, yukarıda bir noktaya yerleştirildi
+  directionalLight.castShadow = true; // Işık için gölge oluşturma etkinleştirildi
+
+  // Yönlü ışığın gölge ayarları
+  directionalLight.shadow.mapSize.width = 2048;  // Daha keskin gölgeler için yüksek çözünürlük
+  directionalLight.shadow.mapSize.height = 2048;
+  directionalLight.shadow.bias = -0.00005; // Gölge hatalarını önlemek için hafif bias ayarı
+
+  scene.add(directionalLight);
+
+  // Kamera pozisyonu
+  camera.position.z = 5;
+
+  // Küresel koordinatlar hesaplama fonksiyonu
+  function calculateSphericalCoordinates(x, y, z, radius) {
+    const longitude = Math.atan2(y, x);
+    const latitude = Math.acos(z / radius);
+    const u = longitude / (2 * Math.PI) + 0.5;
+    const v = latitude / Math.PI;
+    return { u, v };
+  }
+
+  // Işık yoğunluğu hesaplama fonksiyonu
+  function calculateLightIntensity(normal, lightDirection) {
+    const dotProduct = normal.dot(lightDirection);
+    return Math.max(0.1, dotProduct);
+  }
+
+  // Işık özellikleri için kontroller
+  const lightIntensity = document.getElementById('lightIntensity');
+  const lightIntensityValue = document.getElementById('lightIntensityValue');
+
+  const lightPositionX = document.getElementById('lightPositionX');
+  const lightPositionXValue = document.getElementById('lightPositionXValue');
+  const lightPositionY = document.getElementById('lightPositionY');
+  const lightPositionYValue = document.getElementById('lightPositionYValue');
+  const lightPositionZ = document.getElementById('lightPositionZ');
+  const lightPositionZValue = document.getElementById('lightPositionZValue');
+
+  const lightColor = document.getElementById('lightColor'); // Yeni ışık rengi seçici
+  const lightColorValue = lightColor.value;
+
+  // Işık özelliklerini güncelleyen event listener'lar
+  lightIntensity.addEventListener('input', () => {
+    const intensity = parseFloat(lightIntensity.value);
+    directionalLight.intensity = intensity;
+    lightIntensityValue.textContent = intensity;
+
+    // Işık yoğunluğuna bağlı olarak gölge opaklığını ayarla
+    plane.material.opacity = 0.2 + (intensity / 10);  // Düşük ışık yoğunluğu ile daha yumuşak gölgeler
+    directionalLight.shadow.bias = -0.005 + (intensity / 10); // Gölge kenarlarını daha hassas hale getirmek için bias ayarı
+  });
+
+  function updateLightPosition() {
+    directionalLight.position.set(
+      parseFloat(lightPositionX.value),
+      parseFloat(lightPositionY.value),
+      parseFloat(lightPositionZ.value)
+    );
+    lightPositionXValue.textContent = lightPositionX.value;
+    lightPositionYValue.textContent = lightPositionY.value;
+    lightPositionZValue.textContent = lightPositionZ.value;
+  }
+
+  lightPositionX.addEventListener('input', updateLightPosition);
+  lightPositionY.addEventListener('input', updateLightPosition);
+  lightPositionZ.addEventListener('input', updateLightPosition);
+
+  // Işık rengini güncelleme ve gölge rengini değiştirme
+  lightColor.addEventListener('input', () => {
+    const color = lightColor.value;
+    directionalLight.color.set(color); // Işık rengini değiştir
+    plane.material.color.set(color);  // Gölge rengini değiştir
+  });
+
+  // Doku yükleme
+  const imageUpload = document.getElementById('imageUpload');
+  imageUpload.addEventListener('change', (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const textureLoader = new THREE.TextureLoader();
+        textureLoader.load(e.target.result, (texture) => {
+          texture.wrapS = THREE.RepeatWrapping;
+          texture.wrapT = THREE.RepeatWrapping;
+          texture.repeat.set(1, 1);
+          sphere.material.map = texture;
+          sphere.material.needsUpdate = true;
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+  // Dönme hızı kontrolü
+  const rotationSpeedControl = document.getElementById('rotationSpeed');
+  const rotationSpeedValue = document.getElementById('rotationSpeedValue');
+  rotationSpeedControl.addEventListener('input', () => {
+    rotationSpeedValue.textContent = rotationSpeedControl.value;
+  });
+
+  let rotationSpeed = parseFloat(rotationSpeedControl.value);
+
+  // Animasyon döngüsü
+  function animate() {
+    requestAnimationFrame(animate);
+    rotationSpeed = parseFloat(rotationSpeedControl.value); // Dönme hızını dinamik olarak güncelle
+    sphere.rotation.y += rotationSpeed; // Dönme hızını kontrol etmek için değişken ile kontrol et
+    renderer.render(scene, camera);
+  }
+
+  animate();
+
+  // Pencere yeniden boyutlandığında
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+</script>
+
+</body>
+</html>
